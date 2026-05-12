@@ -1,0 +1,16 @@
+{
+  "name": "android-vector-exporter",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "@mastergo/plugin-typings": "latest",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}

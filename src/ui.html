@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Android Vector Exporter</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    color: #1a1a1a;
+    background: #f5f5f5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: #1a1a1a;
+    color: #fff;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .header-title { font-size: 14px; font-weight: 600; }
+  .header-sub { font-size: 11px; color: rgba(255,255,255,0.4); margin-left: auto; }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    background: #fff;
+    border-bottom: 1px solid #e5e5e5;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .search-box {
+    flex: 1;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    outline: none;
+  }
+  .search-box:focus { border-color: #1a7a4a; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 6px; font-size: 12px;
+    font-weight: 500; cursor: pointer; border: none;
+    white-space: nowrap;
+  }
+  .btn-ghost { background: transparent; color: #555; border: 1px solid #ddd; }
+  .btn-ghost:hover { background: #f5f5f5; }
+  .btn-primary { background: #1a7a4a; color: #fff; }
+  .btn-primary:hover { background: #155f39; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Select toolbar ── */
+  .sel-bar {
+    background: #f0faf4;
+    border-bottom: 1px solid #c8e6c9;
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .sel-bar label { font-size: 12px; color: #333; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .sel-bar input[type=checkbox] { accent-color: #1a7a4a; }
+  .sel-info { font-size: 11px; color: #666; }
+  .sel-bar .spacer { flex: 1; }
+
+  /* ── Icon list ── */
+  .list-wrap {
+    flex: 1;
+    overflow-y: auto;
+    background: #fff;
+  }
+  .icon-row {
+    display: flex;
+    align-items: center;
+    padding: 7px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 9px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .icon-row.disabled { opacity: 0.45; cursor: not-allowed; }
+  .icon-row.disabled:hover { background: transparent; }
+  .icon-row.selected { background: #f0faf4; }
+  .icon-row input[type=checkbox] { accent-color: #1a7a4a; cursor: pointer; flex-shrink: 0; }
+  .icon-name { flex: 1; font-family: monospace; font-size: 11px; color: #222; }
+  .icon-size { font-size: 10px; color: #aaa; min-width: 44px; text-align: right; }
+  .hardcoded-colors { display: flex; gap: 3px; align-items: center; flex-shrink: 0; }
+  .color-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.15); flex-shrink: 0;
+    cursor: default;
+  }
+  .hardcoded-warn { font-size: 10px; color: #e65100; }
+  .name-error {
+    font-size: 10px; color: #c62828;
+    background: #fdecea; border: 1px solid #f5c6c6;
+    border-radius: 4px; padding: 1px 5px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  .empty { padding: 32px; text-align: center; color: #bbb; font-size: 12px; }
+
+  /* ── Bottom bar ── */
+  .bottom-bar {
+    background: #fff;
+    border-top: 1px solid #e5e5e5;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .progress-wrap { flex: 1; }
+  .progress-bar { height: 4px; background: #e5e5e5; border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #1a7a4a; border-radius: 2px; transition: width 0.2s; width: 0%; }
+  .status-text { font-size: 11px; color: #888; margin-top: 3px; min-height: 14px; }
+  .status-text.ok { color: #1a7a4a; }
+  .status-text.err { color: #c62828; }
+
+  /* ── Result panel ── */
+  .result-panel {
+    background: #fff;
+    border-top: 1px solid #e5e5e5;
+    flex-shrink: 0;
+    display: none;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .result-panel-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    background: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+  }
+  .result-panel-header .spacer { flex: 1; }
+  .result-row {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid #f5f5f5;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-row .rname { flex: 1; font-family: monospace; }
+  .result-action {
+    color: #1a7a4a; cursor: pointer; padding: 2px 6px;
+    border-radius: 4px; border: 1px solid #c8e6c9; font-size: 10px;
+    white-space: nowrap;
+  }
+  .result-action:hover { background: #e8f5ee; }
+  .result-dl-all {
+    padding: 6px 12px;
+    background: #1a7a4a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: none;
+    width: 100%;
+  }
+  .result-dl-all:hover { background: #155f39; }
+
+  .badge {
+    background: #1a7a4a; color: #fff;
+    border-radius: 10px; padding: 1px 7px;
+    font-size: 10px; font-weight: 600;
+  }
+  .warn-row { font-size: 11px; color: #bf360c; background: #fff3e0; padding: 5px 12px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="3" width="18" height="18" rx="3" fill="#1a7a4a"/>
+    <path d="M8 12h8M12 8v8" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+  <span class="header-title">Android Vector Exporter</span>
+  <span class="header-sub" id="totalCount">加载中…</span>
+</div>
+
+<!-- Toolbar: search + rescan -->
+<div class="toolbar">
+  <input class="search-box" id="searchBox" type="text" placeholder="搜索图标名…" oninput="onSearch()">
+  <button class="btn btn-ghost" onclick="doRescan()">🔄 刷新</button>
+</div>
+
+<!-- Select all bar -->
+<div class="sel-bar">
+  <label>
+    <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked)">
+    全选
+  </label>
+  <span class="sel-info" id="selInfo">已选 0 / 0</span>
+  <div class="spacer"></div>
+  <button class="btn btn-primary" id="btnExport" onclick="doExport()" disabled>⬇️ 导出选中</button>
+</div>
+
+<!-- List -->
+<div class="list-wrap" id="listWrap">
+  <div class="empty" id="emptyHint">正在扫描页面图标…</div>
+</div>
+
+<!-- Bottom status -->
+<div class="bottom-bar" id="bottomBar" style="display:none;">
+  <div class="progress-wrap">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="status-text" id="statusText"></div>
+  </div>
+</div>
+
+<!-- Result panel -->
+<div class="result-panel" id="resultPanel">
+  <div class="result-panel-header">
+    ✅ 导出完成
+    <span class="badge" id="resultBadge">0</span>
+    <div class="spacer"></div>
+    <span class="result-action" onclick="toggleResultPanel()">收起</span>
+  </div>
+  <div id="resultRows"></div>
+  <button class="result-dl-all" onclick="downloadAll()">📦 下载全部</button>
+</div>
+
+<script>
+/* __JSZIP_INLINE__ */
+</script>
+<script>
+// ── State ──
+let allIcons = []      // { id, name, width, height }
+let filtered = []      // after search filter
+let selected = new Set()  // selected icon ids
+let exportResults = [] // { name, xml }
+
+// ── Utils ──
+function send(data) {
+  parent.postMessage({ pluginMessage: data }, '*')
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+}
+
+// ── Render icon list ──
+function renderList(noSelection) {
+  const wrap = document.getElementById('listWrap')
+
+  if (noSelection) {
+    wrap.innerHTML = '<div class="empty">请先在画布中选中画板或区域，再点击 🔄 刷新</div>'
+    return
+  }
+  if (filtered.length === 0) {
+    wrap.innerHTML = '<div class="empty">' + (allIcons.length === 0 ? '选中区域内没有 ic_ 开头的组件' : '没有匹配的图标') + '</div>'
+    return
+  }
+
+  wrap.innerHTML = filtered.map(ic => {
+    const sel = selected.has(ic.id)
+    const hardcodedHtml = ic.hardcoded && ic.hardcoded.length > 0
+      ? `<span class="hardcoded-colors" title="硬编码色值：${ic.hardcoded.join(', ')}">` +
+        ic.hardcoded.slice(0, 4).map(c => `<span class="color-dot" style="background:${c}" title="${c}"></span>`).join('') +
+        (ic.hardcoded.length > 4 ? `<span class="hardcoded-warn">+${ic.hardcoded.length - 4}</span>` : '') +
+        `</span>`
+      : ''
+    const nameErrorHtml = ic.nameError
+      ? `<span class="name-error" title="命名问题">❌ ${esc(ic.nameError)}</span>`
+      : ''
+    const hasError = !!ic.nameError
+    return `<div class="icon-row${sel ? ' selected' : ''}${hasError ? ' disabled' : ''}" data-id="${esc(ic.id)}" onclick="${hasError ? '' : `toggleItem('${esc(ic.id)}')`}">
+      <input type="checkbox" ${sel ? 'checked' : ''} ${hasError ? 'disabled' : ''} onclick="event.stopPropagation();${hasError ? '' : `toggleItem('${esc(ic.id)}')`}">
+      <span class="icon-name">${esc(ic.name)}</span>
+      ${hardcodedHtml}
+      ${nameErrorHtml}
+      <span class="icon-size">${Math.round(ic.width)}×${Math.round(ic.height)}</span>
+    </div>`
+  }).join('')
+}
+
+function updateSelInfo() {
+  const sel = selected.size
+  const total = filtered.length
+  document.getElementById('selInfo').textContent = `已选 ${sel} / ${allIcons.length}`
+  document.getElementById('btnExport').disabled = sel === 0
+  const chkAll = document.getElementById('chkAll')
+  chkAll.checked = sel > 0 && filtered.every(ic => selected.has(ic.id))
+  chkAll.indeterminate = sel > 0 && !chkAll.checked
+  document.getElementById('totalCount').textContent = `共 ${allIcons.length} 个图标`
+}
+
+// ── Interactions ──
+function toggleItem(id) {
+  if (selected.has(id)) selected.delete(id)
+  else selected.add(id)
+  updateSelInfo()
+  // update single row without full re-render
+  const row = document.querySelector(`.icon-row[data-id="${id}"]`)
+  if (row) {
+    const isSel = selected.has(id)
+    row.classList.toggle('selected', isSel)
+    row.querySelector('input[type=checkbox]').checked = isSel
+  }
+}
+
+function toggleSelectAll(checked) {
+  if (checked) filtered.filter(ic => !ic.nameError).forEach(ic => selected.add(ic.id))
+  else filtered.forEach(ic => selected.delete(ic.id))
+  renderList(false)
+  updateSelInfo()
+}
+
+function onSearch() {
+  const q = document.getElementById('searchBox').value.trim().toLowerCase()
+  filtered = q ? allIcons.filter(ic => ic.name.toLowerCase().includes(q)) : allIcons.slice()
+  renderList(false)
+  updateSelInfo()
+}
+
+function doRescan() {
+  document.getElementById('totalCount').textContent = '扫描中…'
+  document.getElementById('listWrap').innerHTML = '<div class="empty">正在扫描…</div>'
+  send({ type: 'RESCAN' })
+}
+
+function doExport() {
+  if (selected.size === 0) return
+  const ids = [...selected]
+  document.getElementById('btnExport').disabled = true
+  document.getElementById('bottomBar').style.display = 'flex'
+  document.getElementById('progressFill').style.width = '0%'
+  setStatus('准备导出…', '')
+  exportResults = []
+  document.getElementById('resultPanel').style.display = 'none'
+  send({ type: 'EXPORT_IDS', ids })
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('statusText')
+  el.textContent = msg
+  el.className = 'status-text ' + (cls || '')
+}
+
+function toggleResultPanel() {
+  const p = document.getElementById('resultPanel')
+  p.style.display = p.style.display === 'none' ? 'block' : 'none'
+}
+
+// ── Download ──
+function downloadXml(name, xml) {
+  const blob = new Blob([xml], { type: 'text/xml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = name + '.xml'; a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function downloadAll() {
+  if (exportResults.length === 0) return
+  const zip = new JSZip()
+  for (const r of exportResults) zip.file(r.name + '.xml', r.xml)
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = 'android_vectors.zip'; a.click()
+  URL.revokeObjectURL(url)
+}
+
+function copyXml(name, e) {
+  e && e.stopPropagation()
+  const r = exportResults.find(x => x.name === name)
+  if (!r) return
+  navigator.clipboard.writeText(r.xml).catch(() => {
+    const ta = document.createElement('textarea')
+    ta.value = r.xml; document.body.appendChild(ta); ta.select()
+    document.execCommand('copy'); document.body.removeChild(ta)
+  })
+}
+
+// ── Message handler ──
+window.onmessage = function(event) {
+  const raw = event.data
+  const msg = (raw && raw.pluginMessage !== undefined) ? raw.pluginMessage : raw
+  if (!msg || !msg.type) return
+
+  if (msg.type === 'PAGE_ICONS') {
+    allIcons = msg.icons || []
+    filtered = allIcons.slice()
+    selected = new Set()
+    renderList(msg.noSelection)
+    updateSelInfo()
+    return
+  }
+
+  if (msg.type === 'PROGRESS') {
+    const { done = 0, total = 1, message } = msg
+    const pct = total > 0 ? Math.round((done / total) * 90) + 5 : 50
+    document.getElementById('progressFill').style.width = pct + '%'
+    setStatus(message || '处理中…', '')
+    return
+  }
+
+  if (msg.type === 'EXPORT_RESULT') {
+    document.getElementById('btnExport').disabled = selected.size === 0
+    document.getElementById('progressFill').style.width = '100%'
+    exportResults = msg.results || []
+    const warnings = msg.warnings || []
+
+    if (exportResults.length > 0) {
+      setStatus(`成功导出 ${exportResults.length} 个图标`, 'ok')
+      renderResultPanel(exportResults, warnings)
+    } else {
+      setStatus('没有成功导出的图标', 'err')
+    }
+
+    // hide progress after a moment
+    setTimeout(() => {
+      document.getElementById('bottomBar').style.display = 'none'
+    }, 1200)
+    return
+  }
+}
+
+function renderResultPanel(results, warnings) {
+  const panel = document.getElementById('resultPanel')
+  panel.style.display = 'block'
+  document.getElementById('resultBadge').textContent = results.length
+
+  const warnHtml = warnings.map(w => `<div class="warn-row">⚠️ ${esc(w)}</div>`).join('')
+  const rowsHtml = results.map(r => `
+    <div class="result-row">
+      <span class="rname">${esc(r.name)}.xml</span>
+      <span class="result-action" onclick="copyXml('${esc(r.name)}', event)">复制</span>
+      <span class="result-action" onclick="downloadXml('${esc(r.name)}', exportResults.find(x=>x.name==='${esc(r.name)}').xml)">下载</span>
+    </div>`).join('')
+
+  document.getElementById('resultRows').innerHTML = warnHtml + rowsHtml
+}
+</script>
+</body>
+</html>
