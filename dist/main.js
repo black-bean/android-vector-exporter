@@ -249,6 +249,7 @@
     const lines = [];
     lines.push(`<?xml version="1.0" encoding="utf-8"?>`);
     lines.push(`<!-- ${filename} -->`);
+    const vbX = result.viewBox[0], vbY = result.viewBox[1];
     const vbW = result.viewBox[2], vbH = result.viewBox[3];
     lines.push(`<vector xmlns:android="http://schemas.android.com/apk/res/android"`);
     lines.push(`    android:width="${r6(result.width)}dp"`);
@@ -256,8 +257,18 @@
     lines.push(`    android:viewportWidth="${r6(vbW)}"`);
     lines.push(`    android:viewportHeight="${r6(vbH)}">`);
     lines.push(``);
-    for (const child of result.children)
-      serializeElement(child, lines, 1);
+    const needsTranslate = Math.abs(vbX) > 1e-3 || Math.abs(vbY) > 1e-3;
+    if (needsTranslate) {
+      lines.push(`    <group`);
+      lines.push(`        android:translateX="${r6(-vbX)}"`);
+      lines.push(`        android:translateY="${r6(-vbY)}">`);
+      for (const child of result.children)
+        serializeElement(child, lines, 2);
+      lines.push(`    </group>`);
+    } else {
+      for (const child of result.children)
+        serializeElement(child, lines, 1);
+    }
     lines.push(`</vector>`);
     return lines.join("\n");
   }
