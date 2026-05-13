@@ -296,9 +296,10 @@ function serializeAndroidXml(result: SvgParseResult, filename: string): string {
 
   // MasterGo exportAsync uses absolute canvas coordinates.
   // If path bounding box doesn't start near (0,0), wrap in a translate group.
+  // Threshold: xmin/ymin > half of viewport means it's a real canvas offset.
   const { xmin, ymin } = calcPathsBoundingBox(result.children)
-  const tx = xmin > 5 ? -xmin : 0
-  const ty = ymin > 5 ? -ymin : 0
+  const tx = xmin > vbW / 2 ? -xmin : 0
+  const ty = ymin > vbH / 2 ? -ymin : 0
   const needsTranslate = Math.abs(tx) > 0.001 || Math.abs(ty) > 0.001
 
   if (needsTranslate) {

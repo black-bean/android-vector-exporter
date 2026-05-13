@@ -283,8 +283,8 @@
     lines.push(`    android:viewportHeight="${r6(vbH)}">`);
     lines.push(``);
     const { xmin, ymin } = calcPathsBoundingBox(result.children);
-    const tx = xmin > 5 ? -xmin : 0;
-    const ty = ymin > 5 ? -ymin : 0;
+    const tx = xmin > vbW / 2 ? -xmin : 0;
+    const ty = ymin > vbH / 2 ? -ymin : 0;
     const needsTranslate = Math.abs(tx) > 1e-3 || Math.abs(ty) > 1e-3;
     if (needsTranslate) {
       lines.push(`    <group`);
