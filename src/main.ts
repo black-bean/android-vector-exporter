@@ -282,7 +282,7 @@ function calcPathsBoundingBox(children: SvgElement[]): { xmin: number; ymin: num
   }
 }
 
-function serializeAndroidXml(result: SvgParseResult, filename: string): string {
+function serializeAndroidXml(result: SvgParseResult, filename: string, absX: number = 0, absY: number = 0): string {
   const lines: string[] = []
   lines.push(`<?xml version="1.0" encoding="utf-8"?>`)
   lines.push(`<!-- ${filename} -->`)
@@ -294,12 +294,10 @@ function serializeAndroidXml(result: SvgParseResult, filename: string): string {
   lines.push(`    android:viewportHeight="${r6(vbH)}">`)
   lines.push(``)
 
-  // MasterGo exportAsync uses absolute canvas coordinates.
-  // If path bounding box doesn't start near (0,0), wrap in a translate group.
-  // Threshold: xmin/ymin > half of viewport means it's a real canvas offset.
-  const { xmin, ymin } = calcPathsBoundingBox(result.children)
-  const tx = xmin > vbW / 2 ? -xmin : 0
-  const ty = ymin > vbH / 2 ? -ymin : 0
+  // MasterGo exportAsync uses absolute canvas coordinates for path data.
+  // Use the node's absolute position on canvas to build the correction translate.
+  const tx = Math.abs(absX) > 0.001 ? -absX : 0
+  const ty = Math.abs(absY) > 0.001 ? -absY : 0
   const needsTranslate = Math.abs(tx) > 0.001 || Math.abs(ty) > 0.001
 
   if (needsTranslate) {
@@ -535,7 +533,11 @@ async function exportNodes(ids: string[]): Promise<void> {
       // Also round viewportWidth/Height to nearest integer
       parsed.viewBox[2] = Math.round(parsed.viewBox[2])
       parsed.viewBox[3] = Math.round(parsed.viewBox[3])
-      const xml = serializeAndroidXml(parsed, iconName)
+
+      // Get node's absolute canvas position to correct coordinate offset in exported SVG
+      const absX = 'absoluteX' in node ? (node as any).absoluteX : 0
+      const absY = 'absoluteY' in node ? (node as any).absoluteY : 0
+      const xml = serializeAndroidXml(parsed, iconName, absX, absY)
       results.push({ name: iconName, xml })
     } catch (err: any) {
       warnings.push(`处理失败：${iconName}（${err?.message || String(err)}）`)

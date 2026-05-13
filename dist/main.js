@@ -245,33 +245,7 @@
     const decomposed = decomposeTransform(transform);
     return __spreadProps(__spreadValues({ alpha: opacity }, decomposed), { children });
   }
-  function calcPathsBoundingBox(children) {
-    let xmin = Infinity, ymin = Infinity;
-    function walk(els) {
-      for (const el of els) {
-        if ("pathData" in el) {
-          const nums = el.pathData.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
-          if (!nums)
-            continue;
-          const coords = nums.map(Number);
-          for (let i = 0; i < coords.length - 1; i += 2) {
-            if (coords[i] < xmin)
-              xmin = coords[i];
-            if (coords[i + 1] < ymin)
-              ymin = coords[i + 1];
-          }
-        } else {
-          walk(el.children);
-        }
-      }
-    }
-    walk(children);
-    return {
-      xmin: xmin === Infinity ? 0 : xmin,
-      ymin: ymin === Infinity ? 0 : ymin
-    };
-  }
-  function serializeAndroidXml(result, filename) {
+  function serializeAndroidXml(result, filename, absX = 0, absY = 0) {
     const lines = [];
     lines.push(`<?xml version="1.0" encoding="utf-8"?>`);
     lines.push(`<!-- ${filename} -->`);
@@ -282,9 +256,8 @@
     lines.push(`    android:viewportWidth="${r6(vbW)}"`);
     lines.push(`    android:viewportHeight="${r6(vbH)}">`);
     lines.push(``);
-    const { xmin, ymin } = calcPathsBoundingBox(result.children);
-    const tx = xmin > vbW / 2 ? -xmin : 0;
-    const ty = ymin > vbH / 2 ? -ymin : 0;
+    const tx = Math.abs(absX) > 1e-3 ? -absX : 0;
+    const ty = Math.abs(absY) > 1e-3 ? -absY : 0;
     const needsTranslate = Math.abs(tx) > 1e-3 || Math.abs(ty) > 1e-3;
     if (needsTranslate) {
       lines.push(`    <group`);
@@ -494,7 +467,9 @@
         parsed.height = nodeH;
         parsed.viewBox[2] = Math.round(parsed.viewBox[2]);
         parsed.viewBox[3] = Math.round(parsed.viewBox[3]);
-        const xml = serializeAndroidXml(parsed, iconName);
+        const absX = "absoluteX" in node ? node.absoluteX : 0;
+        const absY = "absoluteY" in node ? node.absoluteY : 0;
+        const xml = serializeAndroidXml(parsed, iconName, absX, absY);
         results.push({ name: iconName, xml });
       } catch (err) {
         warnings.push(`\u5904\u7406\u5931\u8D25\uFF1A${iconName}\uFF08${(err == null ? void 0 : err.message) || String(err)}\uFF09`);
