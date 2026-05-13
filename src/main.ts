@@ -255,11 +255,37 @@ function buildGroup(attrs: Record<string, string>, children: SvgElement[]): Pars
   return { alpha: opacity, ...decomposed, children }
 }
 
+// Calculate bounding box of all path coordinates
+function calcPathsBoundingBox(children: SvgElement[]): { xmin: number; ymin: number } {
+  let xmin = Infinity, ymin = Infinity
+
+  function walk(els: SvgElement[]) {
+    for (const el of els) {
+      if ('pathData' in el) {
+        const nums = (el as ParsedPath).pathData.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)
+        if (!nums) continue
+        const coords = nums.map(Number)
+        for (let i = 0; i < coords.length - 1; i += 2) {
+          if (coords[i] < xmin) xmin = coords[i]
+          if (coords[i + 1] < ymin) ymin = coords[i + 1]
+        }
+      } else {
+        walk((el as ParsedGroup).children)
+      }
+    }
+  }
+
+  walk(children)
+  return {
+    xmin: xmin === Infinity ? 0 : xmin,
+    ymin: ymin === Infinity ? 0 : ymin,
+  }
+}
+
 function serializeAndroidXml(result: SvgParseResult, filename: string): string {
   const lines: string[] = []
   lines.push(`<?xml version="1.0" encoding="utf-8"?>`)
   lines.push(`<!-- ${filename} -->`)
-  const vbX = result.viewBox[0], vbY = result.viewBox[1]
   const vbW = result.viewBox[2], vbH = result.viewBox[3]
   lines.push(`<vector xmlns:android="http://schemas.android.com/apk/res/android"`)
   lines.push(`    android:width="${r6(result.width)}dp"`)
@@ -268,13 +294,18 @@ function serializeAndroidXml(result: SvgParseResult, filename: string): string {
   lines.push(`    android:viewportHeight="${r6(vbH)}">`)
   lines.push(``)
 
-  // If the SVG viewBox origin is not (0,0), MasterGo exported paths in absolute canvas
-  // coordinates. Wrap everything in a translate group to correct the offset.
-  const needsTranslate = Math.abs(vbX) > 0.001 || Math.abs(vbY) > 0.001
+  // MasterGo exportAsync uses absolute canvas coordinates.
+  // If path bounding box doesn't start near (0,0), wrap in a translate group.
+  const { xmin, ymin } = calcPathsBoundingBox(result.children)
+  const tx = xmin > 5 ? -xmin : 0
+  const ty = ymin > 5 ? -ymin : 0
+  const needsTranslate = Math.abs(tx) > 0.001 || Math.abs(ty) > 0.001
+
   if (needsTranslate) {
     lines.push(`    <group`)
-    lines.push(`        android:translateX="${r6(-vbX)}"`)
-    lines.push(`        android:translateY="${r6(-vbY)}">`)
+    if (Math.abs(tx) > 0.001) lines.push(`        android:translateX="${r6(tx)}"`)
+    if (Math.abs(ty) > 0.001) lines.push(`        android:translateY="${r6(ty)}"`)
+    lines.push(`        >`)
     for (const child of result.children) serializeElement(child, lines, 2)
     lines.push(`    </group>`)
   } else {

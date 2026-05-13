@@ -245,11 +245,36 @@
     const decomposed = decomposeTransform(transform);
     return __spreadProps(__spreadValues({ alpha: opacity }, decomposed), { children });
   }
+  function calcPathsBoundingBox(children) {
+    let xmin = Infinity, ymin = Infinity;
+    function walk(els) {
+      for (const el of els) {
+        if ("pathData" in el) {
+          const nums = el.pathData.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
+          if (!nums)
+            continue;
+          const coords = nums.map(Number);
+          for (let i = 0; i < coords.length - 1; i += 2) {
+            if (coords[i] < xmin)
+              xmin = coords[i];
+            if (coords[i + 1] < ymin)
+              ymin = coords[i + 1];
+          }
+        } else {
+          walk(el.children);
+        }
+      }
+    }
+    walk(children);
+    return {
+      xmin: xmin === Infinity ? 0 : xmin,
+      ymin: ymin === Infinity ? 0 : ymin
+    };
+  }
   function serializeAndroidXml(result, filename) {
     const lines = [];
     lines.push(`<?xml version="1.0" encoding="utf-8"?>`);
     lines.push(`<!-- ${filename} -->`);
-    const vbX = result.viewBox[0], vbY = result.viewBox[1];
     const vbW = result.viewBox[2], vbH = result.viewBox[3];
     lines.push(`<vector xmlns:android="http://schemas.android.com/apk/res/android"`);
     lines.push(`    android:width="${r6(result.width)}dp"`);
@@ -257,11 +282,17 @@
     lines.push(`    android:viewportWidth="${r6(vbW)}"`);
     lines.push(`    android:viewportHeight="${r6(vbH)}">`);
     lines.push(``);
-    const needsTranslate = Math.abs(vbX) > 1e-3 || Math.abs(vbY) > 1e-3;
+    const { xmin, ymin } = calcPathsBoundingBox(result.children);
+    const tx = xmin > 5 ? -xmin : 0;
+    const ty = ymin > 5 ? -ymin : 0;
+    const needsTranslate = Math.abs(tx) > 1e-3 || Math.abs(ty) > 1e-3;
     if (needsTranslate) {
       lines.push(`    <group`);
-      lines.push(`        android:translateX="${r6(-vbX)}"`);
-      lines.push(`        android:translateY="${r6(-vbY)}">`);
+      if (Math.abs(tx) > 1e-3)
+        lines.push(`        android:translateX="${r6(tx)}"`);
+      if (Math.abs(ty) > 1e-3)
+        lines.push(`        android:translateY="${r6(ty)}"`);
+      lines.push(`        >`);
       for (const child of result.children)
         serializeElement(child, lines, 2);
       lines.push(`    </group>`);
