@@ -401,6 +401,7 @@ function checkNameError(name: string): string {
   if (/[一-鿿㐀-䶿]/.test(name)) return '含中文'
   if (name.includes('-')) return '含"-"'
   if (name.includes(' ')) return '含空格'
+  if (/[A-Z]/.test(name)) return '含大写'
   return ''
 }
 

@@ -379,6 +379,8 @@
       return '\u542B"-"';
     if (name.includes(" "))
       return "\u542B\u7A7A\u683C";
+    if (/[A-Z]/.test(name))
+      return "\u542B\u5927\u5199";
     return "";
   }
   function getHardcodedColors(node) {
