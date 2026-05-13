@@ -1,25 +1,5 @@
 "use strict";
 (() => {
-  var __defProp = Object.defineProperty;
-  var __defProps = Object.defineProperties;
-  var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-  var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __propIsEnum = Object.prototype.propertyIsEnumerable;
-  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-  var __spreadValues = (a, b) => {
-    for (var prop in b || (b = {}))
-      if (__hasOwnProp.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    if (__getOwnPropSymbols)
-      for (var prop of __getOwnPropSymbols(b)) {
-        if (__propIsEnum.call(b, prop))
-          __defNormalProp(a, prop, b[prop]);
-      }
-    return a;
-  };
-  var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
-
   // src/main.ts
   var DESIGN_TOKEN_MAP = {
     "Primary_index_1/Primary": "x_color_primary",
@@ -72,60 +52,176 @@
     "Outher/AI_widget_BG1": "x_color_ai_widget_bg1",
     "Outher/AI_widget_BG2": "x_color_ai_widget_bg2"
   };
-  function decomposeTransform(transform) {
-    const result = {};
+  function matIdentity() {
+    return [1, 0, 0, 1, 0, 0];
+  }
+  function matMul(m1, m2) {
+    const [a1, b1, c1, d1, e1, f1] = m1;
+    const [a2, b2, c2, d2, e2, f2] = m2;
+    return [
+      a1 * a2 + c1 * b2,
+      b1 * a2 + d1 * b2,
+      a1 * c2 + c1 * d2,
+      b1 * c2 + d1 * d2,
+      a1 * e2 + c1 * f2 + e1,
+      b1 * e2 + d1 * f2 + f1
+    ];
+  }
+  function parseSvgTransformToMatrix(transform) {
+    var _a, _b, _c, _d;
+    let m = matIdentity();
     if (!transform || transform === "none")
-      return result;
-    const matrixMatch = transform.match(/matrix\(\s*([\d.eE+\-]+)[,\s]+([\d.eE+\-]+)[,\s]+([\d.eE+\-]+)[,\s]+([\d.eE+\-]+)[,\s]+([\d.eE+\-]+)[,\s]+([\d.eE+\-]+)\s*\)/);
-    if (matrixMatch) {
-      const [, a, b, c, d, e, f] = matrixMatch.map(Number);
-      if (Math.abs(b) < 1e-3 && Math.abs(c) < 1e-3) {
-        const sx = a, sy = d, tx = e, ty = f;
-        result.scaleX = sx;
-        result.scaleY = sy;
-        if (Math.abs(1 - sx) > 1e-3)
-          result.pivotX = tx / (1 - sx);
-        if (Math.abs(1 - sy) > 1e-3)
-          result.pivotY = ty / (1 - sy);
-      } else if (Math.abs(a) < 1e-3 && Math.abs(b - 1) < 1e-3 && Math.abs(c + 1) < 1e-3 && Math.abs(d) < 1e-3) {
-        result.rotation = -90;
-        result.pivotX = 0;
-        result.pivotY = 0;
-        result.translateX = e;
-        result.translateY = f;
-      } else if (Math.abs(a) < 1e-3 && Math.abs(b + 1) < 1e-3 && Math.abs(c - 1) < 1e-3 && Math.abs(d) < 1e-3) {
-        result.rotation = 90;
-        result.pivotX = 0;
-        result.pivotY = 0;
-        result.translateX = e;
-        result.translateY = f;
-      } else if (Math.abs(a) < 1e-3 && Math.abs(b - 1) < 1e-3 && Math.abs(c - 1) < 1e-3 && Math.abs(d) < 1e-3) {
-        result.rotation = 90;
-        result.pivotX = 0;
-        result.pivotY = 0;
-        result.translateX = e;
-        result.translateY = f;
+      return m;
+    const re = /(\w+)\s*\(([^)]*)\)/g;
+    let match;
+    while ((match = re.exec(transform)) !== null) {
+      const fn = match[1];
+      const args = match[2].trim().split(/[\s,]+/).map(Number);
+      let t = matIdentity();
+      if (fn === "matrix") {
+        t = [args[0], args[1], args[2], args[3], args[4], args[5]];
+      } else if (fn === "translate") {
+        t = [1, 0, 0, 1, args[0], (_a = args[1]) != null ? _a : 0];
+      } else if (fn === "scale") {
+        const sx = args[0], sy = (_b = args[1]) != null ? _b : sx;
+        t = [sx, 0, 0, sy, 0, 0];
+      } else if (fn === "rotate") {
+        const deg = args[0] * Math.PI / 180;
+        const cos = Math.cos(deg), sin = Math.sin(deg);
+        const cx = (_c = args[1]) != null ? _c : 0, cy = (_d = args[2]) != null ? _d : 0;
+        t = [cos, sin, -sin, cos, cx - cos * cx + sin * cy, cy - sin * cx - cos * cy];
+      } else if (fn === "skewX") {
+        t = [1, 0, Math.tan(args[0] * Math.PI / 180), 1, 0, 0];
+      } else if (fn === "skewY") {
+        t = [1, Math.tan(args[0] * Math.PI / 180), 0, 1, 0, 0];
+      }
+      m = matMul(m, t);
+    }
+    return m;
+  }
+  function isIdentityMatrix(m) {
+    return Math.abs(m[0] - 1) < 1e-4 && Math.abs(m[1]) < 1e-4 && Math.abs(m[2]) < 1e-4 && Math.abs(m[3] - 1) < 1e-4 && Math.abs(m[4]) < 1e-4 && Math.abs(m[5]) < 1e-4;
+  }
+  function applyMatrixToPathData(d, m) {
+    const [a, b, c, dd, e, f] = m;
+    function tx(x, y) {
+      return a * x + c * y + e;
+    }
+    function ty(x, y) {
+      return b * x + dd * y + f;
+    }
+    const tokens = d.match(/[MmZzLlHhVvCcSsQqTtAa]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
+    if (!tokens)
+      return d;
+    const out = [];
+    let i = 0;
+    function nextNum() {
+      return parseFloat(tokens[i++]);
+    }
+    while (i < tokens.length) {
+      const cmd = tokens[i++];
+      if (cmd === "Z" || cmd === "z") {
+        out.push(cmd);
+        continue;
+      }
+      if (cmd === "M" || cmd === "L" || cmd === "T") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const x = nextNum(), y = nextNum();
+          out.push(r6(tx(x, y)), r6(ty(x, y)));
+        }
+      } else if (cmd === "m" || cmd === "l" || cmd === "t") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const dx = nextNum(), dy = nextNum();
+          out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
+        }
+      } else if (cmd === "H") {
+        out.push("L");
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const x = nextNum();
+          out.push(r6(a * x + e), r6(b * x + f));
+        }
+      } else if (cmd === "h") {
+        out.push("l");
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const dx = nextNum();
+          out.push(r6(a * dx), r6(b * dx));
+        }
+      } else if (cmd === "V") {
+        out.push("L");
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const y = nextNum();
+          out.push(r6(c * y + e), r6(dd * y + f));
+        }
+      } else if (cmd === "v") {
+        out.push("l");
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const dy = nextNum();
+          out.push(r6(c * dy), r6(dd * dy));
+        }
+      } else if (cmd === "C") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          for (let k = 0; k < 3; k++) {
+            const x = nextNum(), y = nextNum();
+            out.push(r6(tx(x, y)), r6(ty(x, y)));
+          }
+        }
+      } else if (cmd === "c") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          for (let k = 0; k < 3; k++) {
+            const dx = nextNum(), dy = nextNum();
+            out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
+          }
+        }
+      } else if (cmd === "S" || cmd === "Q") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          for (let k = 0; k < 2; k++) {
+            const x = nextNum(), y = nextNum();
+            out.push(r6(tx(x, y)), r6(ty(x, y)));
+          }
+        }
+      } else if (cmd === "s" || cmd === "q") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          for (let k = 0; k < 2; k++) {
+            const dx = nextNum(), dy = nextNum();
+            out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
+          }
+        }
+      } else if (cmd === "A") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const rx = nextNum(), ry = nextNum(), xRot = nextNum();
+          const largeArc = nextNum(), sweep = nextNum();
+          const x = nextNum(), y = nextNum();
+          out.push(r6(Math.abs(a) * rx + Math.abs(c) * ry), r6(Math.abs(b) * rx + Math.abs(dd) * ry));
+          out.push(r6(xRot), String(largeArc), String(sweep));
+          const det = a * dd - b * c;
+          const finalSweep = det < 0 ? sweep === 1 ? 0 : 1 : sweep;
+          out[out.length - 2] = String(finalSweep);
+          out.push(r6(tx(x, y)), r6(ty(x, y)));
+        }
+      } else if (cmd === "a") {
+        out.push(cmd);
+        while (i < tokens.length && !isNaN(+tokens[i])) {
+          const rx = nextNum(), ry = nextNum(), xRot = nextNum();
+          const largeArc = nextNum(), sweep = nextNum();
+          const dx = nextNum(), dy = nextNum();
+          out.push(r6(Math.abs(a) * rx + Math.abs(c) * ry), r6(Math.abs(b) * rx + Math.abs(dd) * ry));
+          out.push(r6(xRot), String(largeArc));
+          const det = a * dd - b * c;
+          out.push(String(det < 0 ? sweep === 1 ? 0 : 1 : sweep));
+          out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
+        }
+      } else {
+        out.push(cmd);
       }
     }
-    const translateMatch = transform.match(/translate\(\s*([\d.eE+\-]+)(?:[,\s]+([\d.eE+\-]+))?\s*\)/);
-    if (translateMatch) {
-      result.translateX = parseFloat(translateMatch[1]);
-      result.translateY = translateMatch[2] ? parseFloat(translateMatch[2]) : 0;
-    }
-    const scaleMatch = transform.match(/scale\(\s*([\d.eE+\-]+)(?:[,\s]+([\d.eE+\-]+))?\s*\)/);
-    if (scaleMatch) {
-      result.scaleX = parseFloat(scaleMatch[1]);
-      result.scaleY = scaleMatch[2] ? parseFloat(scaleMatch[2]) : result.scaleX;
-    }
-    const rotateMatch = transform.match(/rotate\(\s*([\d.eE+\-]+)(?:[,\s]+([\d.eE+\-]+)[,\s]+([\d.eE+\-]+))?\s*\)/);
-    if (rotateMatch) {
-      result.rotation = parseFloat(rotateMatch[1]);
-      if (rotateMatch[2])
-        result.pivotX = parseFloat(rotateMatch[2]);
-      if (rotateMatch[3])
-        result.pivotY = parseFloat(rotateMatch[3]);
-    }
-    return result;
+    return out.join(" ");
   }
   function parseColor(color) {
     if (!color || color === "none" || color === "transparent")
@@ -186,10 +282,10 @@
     const height = parseFloat(svgAttrs["height"] || String(vbParts[3]));
     const viewBox = [vbParts[0], vbParts[1], vbParts[2], vbParts[3]];
     const innerSvg = svgStr.replace(/<svg[^>]*>/, "").replace(/<\/svg>/, "");
-    const children = parseElements(innerSvg, ctx);
+    const children = parseElements(innerSvg, ctx, matIdentity());
     return { width, height, viewBox, children };
   }
-  function parseElements(html, ctx) {
+  function parseElements(html, ctx, parentMatrix) {
     const results = [];
     const tokenRe = /<(\/?)(\w+)([^>]*?)(\/?)>/g;
     let m;
@@ -201,17 +297,26 @@
         if (stack.length > 0) {
           const top = stack.pop();
           if (top.tag === "g") {
-            const group = buildGroup(top.attrs, top.children);
-            if (stack.length > 0)
-              stack[stack.length - 1].children.push(group);
-            else
-              results.push(group);
+            const style = top.attrs["style"] || "";
+            const opacity = parseOpacity(style, top.attrs["opacity"] || "");
+            let elements = top.children;
+            if (opacity < 0.999) {
+              elements = [{ alpha: opacity, children: top.children }];
+            }
+            if (stack.length > 0) {
+              for (const el of elements)
+                stack[stack.length - 1].children.push(el);
+            } else {
+              for (const el of elements)
+                results.push(el);
+            }
           }
         }
         continue;
       }
+      const currentMatrix = stack.length > 0 ? stack[stack.length - 1].matrix : parentMatrix;
       if (tag === "path") {
-        const path = buildPath(attrs, ctx);
+        const path = buildPath(attrs, ctx, currentMatrix);
         if (path) {
           if (stack.length > 0)
             stack[stack.length - 1].children.push(path);
@@ -219,12 +324,15 @@
             results.push(path);
         }
       } else if (tag === "g" && !selfClosing) {
-        stack.push({ tag: "g", attrs, children: [] });
+        const transform = attrs["transform"] || "";
+        const localMat = parseSvgTransformToMatrix(transform);
+        const combinedMat = matMul(currentMatrix, localMat);
+        stack.push({ tag: "g", attrs, children: [], matrix: combinedMat });
       }
     }
     return results;
   }
-  function buildPath(attrs, ctx) {
+  function buildPath(attrs, ctx, matrix) {
     const style = attrs["style"] || "";
     const fill = parseFill(style, attrs["fill"] || "");
     if (fill === "none" || fill === "")
@@ -236,14 +344,8 @@
     const fillRule = parseFillRule(style, attrs["fill-rule"] || "");
     const fillType = fillRule === "evenodd" ? "evenOdd" : "nonZero";
     const fillColor = parseColor(fill).toUpperCase();
-    return { pathData, fillColor, fillAlpha: elementOpacity, fillType };
-  }
-  function buildGroup(attrs, children) {
-    const style = attrs["style"] || "";
-    const opacity = parseOpacity(style, attrs["opacity"] || "");
-    const transform = attrs["transform"] || "";
-    const decomposed = decomposeTransform(transform);
-    return __spreadProps(__spreadValues({ alpha: opacity }, decomposed), { children });
+    const transformedPath = isIdentityMatrix(matrix) ? pathData : applyMatrixToPathData(pathData, matrix);
+    return { pathData: transformedPath, fillColor, fillAlpha: elementOpacity, fillType };
   }
   function serializeAndroidXml(result, filename, absX = 0, absY = 0) {
     const lines = [];
@@ -291,40 +393,8 @@
       lines.push(`${indent}/>`);
     } else {
       const g = el;
-      const hasTransform = g.rotation !== void 0 || g.scaleX !== void 0 || g.scaleY !== void 0 || g.translateX !== void 0 || g.translateY !== void 0 || g.pivotX !== void 0 || g.pivotY !== void 0;
-      if (!hasTransform) {
-        for (const child of g.children) {
-          serializeElement(child, lines, depth, inheritAlpha * g.alpha);
-        }
-      } else {
-        const gAttrs = [];
-        if (g.alpha < 0.999)
-          gAttrs.push(`android:alpha="${r6(g.alpha)}"`);
-        if (g.rotation !== void 0)
-          gAttrs.push(`android:rotation="${r6(g.rotation)}"`);
-        if (g.pivotX !== void 0)
-          gAttrs.push(`android:pivotX="${r6(g.pivotX)}"`);
-        if (g.pivotY !== void 0)
-          gAttrs.push(`android:pivotY="${r6(g.pivotY)}"`);
-        if (g.scaleX !== void 0 && g.scaleX !== 1)
-          gAttrs.push(`android:scaleX="${r6(g.scaleX)}"`);
-        if (g.scaleY !== void 0 && g.scaleY !== 1)
-          gAttrs.push(`android:scaleY="${r6(g.scaleY)}"`);
-        if (g.translateX !== void 0 && g.translateX !== 0)
-          gAttrs.push(`android:translateX="${r6(g.translateX)}"`);
-        if (g.translateY !== void 0 && g.translateY !== 0)
-          gAttrs.push(`android:translateY="${r6(g.translateY)}"`);
-        if (gAttrs.length === 0) {
-          lines.push(`${indent}<group>`);
-        } else {
-          lines.push(`${indent}<group`);
-          for (const a of gAttrs)
-            lines.push(`${indent}    ${a}`);
-          lines.push(`${indent}>`);
-        }
-        for (const child of g.children)
-          serializeElement(child, lines, depth + 1, inheritAlpha);
-        lines.push(`${indent}</group>`);
+      for (const child of g.children) {
+        serializeElement(child, lines, depth, inheritAlpha * g.alpha);
       }
     }
   }
