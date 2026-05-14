@@ -71,189 +71,6 @@ interface ParsedGroup {
   children: (ParsedPath | ParsedGroup)[]
 }
 
-// 2D affine matrix [a, b, c, d, e, f]  =>  [x', y'] = [a*x + c*y + e,  b*x + d*y + f]
-type Mat = [number, number, number, number, number, number]
-
-function matIdentity(): Mat { return [1, 0, 0, 1, 0, 0] }
-
-function matMul(m1: Mat, m2: Mat): Mat {
-  const [a1,b1,c1,d1,e1,f1] = m1
-  const [a2,b2,c2,d2,e2,f2] = m2
-  return [
-    a1*a2 + c1*b2,
-    b1*a2 + d1*b2,
-    a1*c2 + c1*d2,
-    b1*c2 + d1*d2,
-    a1*e2 + c1*f2 + e1,
-    b1*e2 + d1*f2 + f1,
-  ]
-}
-
-function parseSvgTransformToMatrix(transform: string): Mat {
-  let m = matIdentity()
-  if (!transform || transform === 'none') return m
-
-  // iterate all transform functions in order
-  const re = /(\w+)\s*\(([^)]*)\)/g
-  let match: RegExpExecArray | null
-  while ((match = re.exec(transform)) !== null) {
-    const fn = match[1]
-    const args = match[2].trim().split(/[\s,]+/).map(Number)
-    let t: Mat = matIdentity()
-    if (fn === 'matrix') {
-      t = [args[0], args[1], args[2], args[3], args[4], args[5]]
-    } else if (fn === 'translate') {
-      t = [1, 0, 0, 1, args[0], args[1] ?? 0]
-    } else if (fn === 'scale') {
-      const sx = args[0], sy = args[1] ?? sx
-      t = [sx, 0, 0, sy, 0, 0]
-    } else if (fn === 'rotate') {
-      const deg = args[0] * Math.PI / 180
-      const cos = Math.cos(deg), sin = Math.sin(deg)
-      const cx = args[1] ?? 0, cy = args[2] ?? 0
-      // rotate around (cx,cy): translate(-cx,-cy), rotate, translate(cx,cy)
-      t = [cos, sin, -sin, cos, cx - cos*cx + sin*cy, cy - sin*cx - cos*cy]
-    } else if (fn === 'skewX') {
-      t = [1, 0, Math.tan(args[0]*Math.PI/180), 1, 0, 0]
-    } else if (fn === 'skewY') {
-      t = [1, Math.tan(args[0]*Math.PI/180), 0, 1, 0, 0]
-    }
-    m = matMul(m, t)
-  }
-  return m
-}
-
-function isIdentityMatrix(m: Mat): boolean {
-  return Math.abs(m[0]-1)<0.0001 && Math.abs(m[1])<0.0001 &&
-         Math.abs(m[2])<0.0001 && Math.abs(m[3]-1)<0.0001 &&
-         Math.abs(m[4])<0.0001 && Math.abs(m[5])<0.0001
-}
-
-// Apply 2D affine matrix to all absolute coordinates in an SVG path data string.
-// Strategy: parse path commands, apply matrix to all absolute points.
-// Relative commands remain relative — but MasterGo exports absolute coords, so this is fine.
-function applyMatrixToPathData(d: string, m: Mat): string {
-  const [a, b, c, dd, e, f] = m
-  function tx(x: number, y: number) { return a*x + c*y + e }
-  function ty(x: number, y: number) { return b*x + dd*y + f }
-
-  // tokenize
-  const tokens = d.match(/[MmZzLlHhVvCcSsQqTtAa]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)
-  if (!tokens) return d
-
-  const out: string[] = []
-  let i = 0
-  function nextNum(): number { return parseFloat(tokens[i++]) }
-
-  while (i < tokens.length) {
-    const cmd = tokens[i++]
-    if (cmd === 'Z' || cmd === 'z') { out.push(cmd); continue }
-
-    if (cmd === 'M' || cmd === 'L' || cmd === 'T') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const x = nextNum(), y = nextNum()
-        out.push(r6(tx(x,y)), r6(ty(x,y)))
-      }
-    } else if (cmd === 'm' || cmd === 'l' || cmd === 't') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        // relative — only scale/rotate affects direction, not translate
-        const dx = nextNum(), dy = nextNum()
-        out.push(r6(a*dx + c*dy), r6(b*dx + dd*dy))
-      }
-    } else if (cmd === 'H') {
-      out.push('L') // H with transform may have Y component
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const x = nextNum()
-        // H doesn't carry Y; we'll need current Y but we don't track it — emit as L with transformed point
-        // Approximate: treat y=0 contribution (correct when no y-shear)
-        out.push(r6(a*x + e), r6(b*x + f))
-      }
-    } else if (cmd === 'h') {
-      out.push('l')
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const dx = nextNum()
-        out.push(r6(a*dx), r6(b*dx))
-      }
-    } else if (cmd === 'V') {
-      out.push('L')
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const y = nextNum()
-        out.push(r6(c*y + e), r6(dd*y + f))
-      }
-    } else if (cmd === 'v') {
-      out.push('l')
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const dy = nextNum()
-        out.push(r6(c*dy), r6(dd*dy))
-      }
-    } else if (cmd === 'C') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        for (let k = 0; k < 3; k++) {
-          const x = nextNum(), y = nextNum()
-          out.push(r6(tx(x,y)), r6(ty(x,y)))
-        }
-      }
-    } else if (cmd === 'c') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        for (let k = 0; k < 3; k++) {
-          const dx = nextNum(), dy = nextNum()
-          out.push(r6(a*dx+c*dy), r6(b*dx+dd*dy))
-        }
-      }
-    } else if (cmd === 'S' || cmd === 'Q') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        for (let k = 0; k < 2; k++) {
-          const x = nextNum(), y = nextNum()
-          out.push(r6(tx(x,y)), r6(ty(x,y)))
-        }
-      }
-    } else if (cmd === 's' || cmd === 'q') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        for (let k = 0; k < 2; k++) {
-          const dx = nextNum(), dy = nextNum()
-          out.push(r6(a*dx+c*dy), r6(b*dx+dd*dy))
-        }
-      }
-    } else if (cmd === 'A') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const rx = nextNum(), ry = nextNum(), xRot = nextNum()
-        const largeArc = nextNum(), sweep = nextNum()
-        const x = nextNum(), y = nextNum()
-        // scale radii, keep flags
-        out.push(r6(Math.abs(a)*rx + Math.abs(c)*ry), r6(Math.abs(b)*rx + Math.abs(dd)*ry))
-        out.push(r6(xRot), String(largeArc), String(sweep))
-        // flip sweep if transform has negative determinant (mirror)
-        const det = a*dd - b*c
-        const finalSweep = det < 0 ? (sweep === 1 ? 0 : 1) : sweep
-        out[out.length-2] = String(finalSweep)  // fix sweep
-        out.push(r6(tx(x,y)), r6(ty(x,y)))
-      }
-    } else if (cmd === 'a') {
-      out.push(cmd)
-      while (i < tokens.length && !isNaN(+tokens[i])) {
-        const rx = nextNum(), ry = nextNum(), xRot = nextNum()
-        const largeArc = nextNum(), sweep = nextNum()
-        const dx = nextNum(), dy = nextNum()
-        out.push(r6(Math.abs(a)*rx+Math.abs(c)*ry), r6(Math.abs(b)*rx+Math.abs(dd)*ry))
-        out.push(r6(xRot), String(largeArc))
-        const det = a*dd - b*c
-        out.push(String(det < 0 ? (sweep===1?0:1) : sweep))
-        out.push(r6(a*dx+c*dy), r6(b*dx+dd*dy))
-      }
-    } else {
-      out.push(cmd)
-    }
-  }
-  return out.join(' ')
-}
-
 function parseColor(color: string): string {
   if (!color || color === 'none' || color === 'transparent') return ''
   color = color.trim()
@@ -324,20 +141,21 @@ function parseSVG(svgStr: string, ctx: SvgParseContext): SvgParseResult {
   const height = parseFloat(svgAttrs['height'] || String(vbParts[3]))
   const viewBox: [number, number, number, number] = [vbParts[0], vbParts[1], vbParts[2], vbParts[3]]
   const innerSvg = svgStr.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '')
-  const children = parseElements(innerSvg, ctx, matIdentity())
+  const children = parseElements(innerSvg, ctx)
   return { width, height, viewBox, children }
 }
 
 type SvgElement = ParsedPath | ParsedGroup
 
-// Parse SVG elements, accumulating transform matrices as we descend into groups.
-// Groups with only alpha (no transform) are kept as ParsedGroup for alpha folding.
-// Groups with any transform have the matrix applied directly to child path coordinates.
-function parseElements(html: string, ctx: SvgParseContext, parentMatrix: Mat): SvgElement[] {
+// MasterGo exportAsync: path coordinates are already absolute canvas coordinates.
+// Any <g transform> in the SVG is a redundant description of the same canvas transform
+// — the transform is already baked into the path coords. We must NOT apply it again.
+// We only care about <g opacity> for alpha folding.
+function parseElements(html: string, ctx: SvgParseContext): SvgElement[] {
   const results: SvgElement[] = []
   const tokenRe = /<(\/?)(\w+)([^>]*?)(\/?)>/g
   let m: RegExpExecArray | null
-  const stack: { tag: string; attrs: Record<string, string>; children: SvgElement[]; matrix: Mat }[] = []
+  const stack: { tag: string; attrs: Record<string, string>; children: SvgElement[] }[] = []
 
   while ((m = tokenRe.exec(html)) !== null) {
     const [, closing, tag, attrStr, selfClosing] = m
@@ -349,7 +167,7 @@ function parseElements(html: string, ctx: SvgParseContext, parentMatrix: Mat): S
         if (top.tag === 'g') {
           const style = top.attrs['style'] || ''
           const opacity = parseOpacity(style, top.attrs['opacity'] || '')
-          // If opacity != 1, wrap in alpha group; children already have transform baked in
+          // Only wrap in alpha group if opacity < 1; ignore all transforms
           let elements: SvgElement[] = top.children
           if (opacity < 0.999) {
             elements = [{ alpha: opacity, children: top.children }]
@@ -364,25 +182,20 @@ function parseElements(html: string, ctx: SvgParseContext, parentMatrix: Mat): S
       continue
     }
 
-    const currentMatrix = stack.length > 0 ? stack[stack.length-1].matrix : parentMatrix
-
     if (tag === 'path') {
-      const path = buildPath(attrs, ctx, currentMatrix)
+      const path = buildPath(attrs, ctx)
       if (path) {
         if (stack.length > 0) stack[stack.length - 1].children.push(path)
         else results.push(path)
       }
     } else if (tag === 'g' && !selfClosing) {
-      const transform = attrs['transform'] || ''
-      const localMat = parseSvgTransformToMatrix(transform)
-      const combinedMat = matMul(currentMatrix, localMat)
-      stack.push({ tag: 'g', attrs, children: [], matrix: combinedMat })
+      stack.push({ tag: 'g', attrs, children: [] })
     }
   }
   return results
 }
 
-function buildPath(attrs: Record<string, string>, ctx: SvgParseContext, matrix: Mat): ParsedPath | null {
+function buildPath(attrs: Record<string, string>, ctx: SvgParseContext): ParsedPath | null {
   const style = attrs['style'] || ''
   const fill = parseFill(style, attrs['fill'] || '')
   if (fill === 'none' || fill === '') return null
@@ -394,37 +207,7 @@ function buildPath(attrs: Record<string, string>, ctx: SvgParseContext, matrix: 
   const fillType = fillRule === 'evenodd' ? 'evenOdd' : 'nonZero'
   const fillColor = parseColor(fill).toUpperCase()
 
-  // Apply accumulated transform matrix to path coordinates
-  const transformedPath = isIdentityMatrix(matrix) ? pathData : applyMatrixToPathData(pathData, matrix)
-
-  return { pathData: transformedPath, fillColor, fillAlpha: elementOpacity, fillType }
-}
-
-// Calculate bounding box of all path coordinates
-function calcPathsBoundingBox(children: SvgElement[]): { xmin: number; ymin: number } {
-  let xmin = Infinity, ymin = Infinity
-
-  function walk(els: SvgElement[]) {
-    for (const el of els) {
-      if ('pathData' in el) {
-        const nums = (el as ParsedPath).pathData.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)
-        if (!nums) continue
-        const coords = nums.map(Number)
-        for (let i = 0; i < coords.length - 1; i += 2) {
-          if (coords[i] < xmin) xmin = coords[i]
-          if (coords[i + 1] < ymin) ymin = coords[i + 1]
-        }
-      } else {
-        walk((el as ParsedGroup).children)
-      }
-    }
-  }
-
-  walk(children)
-  return {
-    xmin: xmin === Infinity ? 0 : xmin,
-    ymin: ymin === Infinity ? 0 : ymin,
-  }
+  return { pathData, fillColor, fillAlpha: elementOpacity, fillType }
 }
 
 function serializeAndroidXml(result: SvgParseResult, filename: string, absX: number = 0, absY: number = 0): string {
@@ -653,9 +436,17 @@ async function exportNodes(ids: string[]): Promise<void> {
       parsed.viewBox[2] = Math.round(parsed.viewBox[2])
       parsed.viewBox[3] = Math.round(parsed.viewBox[3])
 
-      // Get node's absolute canvas position to correct coordinate offset in exported SVG
-      const absX = 'absoluteX' in node ? (node as any).absoluteX : 0
-      const absY = 'absoluteY' in node ? (node as any).absoluteY : 0
+      // Get node's absolute canvas position via absoluteTransform (most reliable)
+      // absoluteTransform = [[a,c,tx],[b,d,ty]], tx=col2row0, ty=col2row1
+      let absX = 0, absY = 0
+      const absTransform = (node as any).absoluteTransform as [[number,number,number],[number,number,number]] | undefined
+      if (absTransform) {
+        absX = absTransform[0][2]
+        absY = absTransform[1][2]
+      } else if ('absoluteX' in node) {
+        absX = (node as any).absoluteX
+        absY = (node as any).absoluteY
+      }
       const xml = serializeAndroidXml(parsed, iconName, absX, absY)
       results.push({ name: iconName, xml })
     } catch (err: any) {

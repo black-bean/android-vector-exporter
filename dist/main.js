@@ -52,177 +52,6 @@
     "Outher/AI_widget_BG1": "x_color_ai_widget_bg1",
     "Outher/AI_widget_BG2": "x_color_ai_widget_bg2"
   };
-  function matIdentity() {
-    return [1, 0, 0, 1, 0, 0];
-  }
-  function matMul(m1, m2) {
-    const [a1, b1, c1, d1, e1, f1] = m1;
-    const [a2, b2, c2, d2, e2, f2] = m2;
-    return [
-      a1 * a2 + c1 * b2,
-      b1 * a2 + d1 * b2,
-      a1 * c2 + c1 * d2,
-      b1 * c2 + d1 * d2,
-      a1 * e2 + c1 * f2 + e1,
-      b1 * e2 + d1 * f2 + f1
-    ];
-  }
-  function parseSvgTransformToMatrix(transform) {
-    var _a, _b, _c, _d;
-    let m = matIdentity();
-    if (!transform || transform === "none")
-      return m;
-    const re = /(\w+)\s*\(([^)]*)\)/g;
-    let match;
-    while ((match = re.exec(transform)) !== null) {
-      const fn = match[1];
-      const args = match[2].trim().split(/[\s,]+/).map(Number);
-      let t = matIdentity();
-      if (fn === "matrix") {
-        t = [args[0], args[1], args[2], args[3], args[4], args[5]];
-      } else if (fn === "translate") {
-        t = [1, 0, 0, 1, args[0], (_a = args[1]) != null ? _a : 0];
-      } else if (fn === "scale") {
-        const sx = args[0], sy = (_b = args[1]) != null ? _b : sx;
-        t = [sx, 0, 0, sy, 0, 0];
-      } else if (fn === "rotate") {
-        const deg = args[0] * Math.PI / 180;
-        const cos = Math.cos(deg), sin = Math.sin(deg);
-        const cx = (_c = args[1]) != null ? _c : 0, cy = (_d = args[2]) != null ? _d : 0;
-        t = [cos, sin, -sin, cos, cx - cos * cx + sin * cy, cy - sin * cx - cos * cy];
-      } else if (fn === "skewX") {
-        t = [1, 0, Math.tan(args[0] * Math.PI / 180), 1, 0, 0];
-      } else if (fn === "skewY") {
-        t = [1, Math.tan(args[0] * Math.PI / 180), 0, 1, 0, 0];
-      }
-      m = matMul(m, t);
-    }
-    return m;
-  }
-  function isIdentityMatrix(m) {
-    return Math.abs(m[0] - 1) < 1e-4 && Math.abs(m[1]) < 1e-4 && Math.abs(m[2]) < 1e-4 && Math.abs(m[3] - 1) < 1e-4 && Math.abs(m[4]) < 1e-4 && Math.abs(m[5]) < 1e-4;
-  }
-  function applyMatrixToPathData(d, m) {
-    const [a, b, c, dd, e, f] = m;
-    function tx(x, y) {
-      return a * x + c * y + e;
-    }
-    function ty(x, y) {
-      return b * x + dd * y + f;
-    }
-    const tokens = d.match(/[MmZzLlHhVvCcSsQqTtAa]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
-    if (!tokens)
-      return d;
-    const out = [];
-    let i = 0;
-    function nextNum() {
-      return parseFloat(tokens[i++]);
-    }
-    while (i < tokens.length) {
-      const cmd = tokens[i++];
-      if (cmd === "Z" || cmd === "z") {
-        out.push(cmd);
-        continue;
-      }
-      if (cmd === "M" || cmd === "L" || cmd === "T") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const x = nextNum(), y = nextNum();
-          out.push(r6(tx(x, y)), r6(ty(x, y)));
-        }
-      } else if (cmd === "m" || cmd === "l" || cmd === "t") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const dx = nextNum(), dy = nextNum();
-          out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
-        }
-      } else if (cmd === "H") {
-        out.push("L");
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const x = nextNum();
-          out.push(r6(a * x + e), r6(b * x + f));
-        }
-      } else if (cmd === "h") {
-        out.push("l");
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const dx = nextNum();
-          out.push(r6(a * dx), r6(b * dx));
-        }
-      } else if (cmd === "V") {
-        out.push("L");
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const y = nextNum();
-          out.push(r6(c * y + e), r6(dd * y + f));
-        }
-      } else if (cmd === "v") {
-        out.push("l");
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const dy = nextNum();
-          out.push(r6(c * dy), r6(dd * dy));
-        }
-      } else if (cmd === "C") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          for (let k = 0; k < 3; k++) {
-            const x = nextNum(), y = nextNum();
-            out.push(r6(tx(x, y)), r6(ty(x, y)));
-          }
-        }
-      } else if (cmd === "c") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          for (let k = 0; k < 3; k++) {
-            const dx = nextNum(), dy = nextNum();
-            out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
-          }
-        }
-      } else if (cmd === "S" || cmd === "Q") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          for (let k = 0; k < 2; k++) {
-            const x = nextNum(), y = nextNum();
-            out.push(r6(tx(x, y)), r6(ty(x, y)));
-          }
-        }
-      } else if (cmd === "s" || cmd === "q") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          for (let k = 0; k < 2; k++) {
-            const dx = nextNum(), dy = nextNum();
-            out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
-          }
-        }
-      } else if (cmd === "A") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const rx = nextNum(), ry = nextNum(), xRot = nextNum();
-          const largeArc = nextNum(), sweep = nextNum();
-          const x = nextNum(), y = nextNum();
-          out.push(r6(Math.abs(a) * rx + Math.abs(c) * ry), r6(Math.abs(b) * rx + Math.abs(dd) * ry));
-          out.push(r6(xRot), String(largeArc), String(sweep));
-          const det = a * dd - b * c;
-          const finalSweep = det < 0 ? sweep === 1 ? 0 : 1 : sweep;
-          out[out.length - 2] = String(finalSweep);
-          out.push(r6(tx(x, y)), r6(ty(x, y)));
-        }
-      } else if (cmd === "a") {
-        out.push(cmd);
-        while (i < tokens.length && !isNaN(+tokens[i])) {
-          const rx = nextNum(), ry = nextNum(), xRot = nextNum();
-          const largeArc = nextNum(), sweep = nextNum();
-          const dx = nextNum(), dy = nextNum();
-          out.push(r6(Math.abs(a) * rx + Math.abs(c) * ry), r6(Math.abs(b) * rx + Math.abs(dd) * ry));
-          out.push(r6(xRot), String(largeArc));
-          const det = a * dd - b * c;
-          out.push(String(det < 0 ? sweep === 1 ? 0 : 1 : sweep));
-          out.push(r6(a * dx + c * dy), r6(b * dx + dd * dy));
-        }
-      } else {
-        out.push(cmd);
-      }
-    }
-    return out.join(" ");
-  }
   function parseColor(color) {
     if (!color || color === "none" || color === "transparent")
       return "";
@@ -282,10 +111,10 @@
     const height = parseFloat(svgAttrs["height"] || String(vbParts[3]));
     const viewBox = [vbParts[0], vbParts[1], vbParts[2], vbParts[3]];
     const innerSvg = svgStr.replace(/<svg[^>]*>/, "").replace(/<\/svg>/, "");
-    const children = parseElements(innerSvg, ctx, matIdentity());
+    const children = parseElements(innerSvg, ctx);
     return { width, height, viewBox, children };
   }
-  function parseElements(html, ctx, parentMatrix) {
+  function parseElements(html, ctx) {
     const results = [];
     const tokenRe = /<(\/?)(\w+)([^>]*?)(\/?)>/g;
     let m;
@@ -314,9 +143,8 @@
         }
         continue;
       }
-      const currentMatrix = stack.length > 0 ? stack[stack.length - 1].matrix : parentMatrix;
       if (tag === "path") {
-        const path = buildPath(attrs, ctx, currentMatrix);
+        const path = buildPath(attrs, ctx);
         if (path) {
           if (stack.length > 0)
             stack[stack.length - 1].children.push(path);
@@ -324,15 +152,12 @@
             results.push(path);
         }
       } else if (tag === "g" && !selfClosing) {
-        const transform = attrs["transform"] || "";
-        const localMat = parseSvgTransformToMatrix(transform);
-        const combinedMat = matMul(currentMatrix, localMat);
-        stack.push({ tag: "g", attrs, children: [], matrix: combinedMat });
+        stack.push({ tag: "g", attrs, children: [] });
       }
     }
     return results;
   }
-  function buildPath(attrs, ctx, matrix) {
+  function buildPath(attrs, ctx) {
     const style = attrs["style"] || "";
     const fill = parseFill(style, attrs["fill"] || "");
     if (fill === "none" || fill === "")
@@ -344,8 +169,7 @@
     const fillRule = parseFillRule(style, attrs["fill-rule"] || "");
     const fillType = fillRule === "evenodd" ? "evenOdd" : "nonZero";
     const fillColor = parseColor(fill).toUpperCase();
-    const transformedPath = isIdentityMatrix(matrix) ? pathData : applyMatrixToPathData(pathData, matrix);
-    return { pathData: transformedPath, fillColor, fillAlpha: elementOpacity, fillType };
+    return { pathData, fillColor, fillAlpha: elementOpacity, fillType };
   }
   function serializeAndroidXml(result, filename, absX = 0, absY = 0) {
     const lines = [];
@@ -537,8 +361,15 @@
         parsed.height = nodeH;
         parsed.viewBox[2] = Math.round(parsed.viewBox[2]);
         parsed.viewBox[3] = Math.round(parsed.viewBox[3]);
-        const absX = "absoluteX" in node ? node.absoluteX : 0;
-        const absY = "absoluteY" in node ? node.absoluteY : 0;
+        let absX = 0, absY = 0;
+        const absTransform = node.absoluteTransform;
+        if (absTransform) {
+          absX = absTransform[0][2];
+          absY = absTransform[1][2];
+        } else if ("absoluteX" in node) {
+          absX = node.absoluteX;
+          absY = node.absoluteY;
+        }
         const xml = serializeAndroidXml(parsed, iconName, absX, absY);
         results.push({ name: iconName, xml });
       } catch (err) {
