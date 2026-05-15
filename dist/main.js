@@ -171,7 +171,7 @@
     const fillColor = parseColor(fill).toUpperCase();
     return { pathData, fillColor, fillAlpha: elementOpacity, fillType };
   }
-  function serializeAndroidXml(result, filename, absX = 0, absY = 0) {
+  function serializeAndroidXml(result, filename) {
     const lines = [];
     lines.push(`<?xml version="1.0" encoding="utf-8"?>`);
     lines.push(`<!-- ${filename} -->`);
@@ -182,23 +182,8 @@
     lines.push(`    android:viewportWidth="${r6(vbW)}"`);
     lines.push(`    android:viewportHeight="${r6(vbH)}">`);
     lines.push(``);
-    const tx = Math.abs(absX) > 1e-3 ? -absX : 0;
-    const ty = Math.abs(absY) > 1e-3 ? -absY : 0;
-    const needsTranslate = Math.abs(tx) > 1e-3 || Math.abs(ty) > 1e-3;
-    if (needsTranslate) {
-      lines.push(`    <group`);
-      if (Math.abs(tx) > 1e-3)
-        lines.push(`        android:translateX="${r6(tx)}"`);
-      if (Math.abs(ty) > 1e-3)
-        lines.push(`        android:translateY="${r6(ty)}"`);
-      lines.push(`        >`);
-      for (const child of result.children)
-        serializeElement(child, lines, 2);
-      lines.push(`    </group>`);
-    } else {
-      for (const child of result.children)
-        serializeElement(child, lines, 1);
-    }
+    for (const child of result.children)
+      serializeElement(child, lines, 1);
     lines.push(`</vector>`);
     return lines.join("\n");
   }
@@ -361,16 +346,7 @@
         parsed.height = nodeH;
         parsed.viewBox[2] = Math.round(parsed.viewBox[2]);
         parsed.viewBox[3] = Math.round(parsed.viewBox[3]);
-        let absX = 0, absY = 0;
-        const absTransform = node.absoluteTransform;
-        if (absTransform) {
-          absX = absTransform[0][2];
-          absY = absTransform[1][2];
-        } else if ("absoluteX" in node) {
-          absX = node.absoluteX;
-          absY = node.absoluteY;
-        }
-        const xml = serializeAndroidXml(parsed, iconName, absX, absY);
+        const xml = serializeAndroidXml(parsed, iconName);
         results.push({ name: iconName, xml });
       } catch (err) {
         warnings.push(`\u5904\u7406\u5931\u8D25\uFF1A${iconName}\uFF08${(err == null ? void 0 : err.message) || String(err)}\uFF09`);

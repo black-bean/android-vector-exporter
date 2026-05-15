@@ -210,7 +210,7 @@ function buildPath(attrs: Record<string, string>, ctx: SvgParseContext): ParsedP
   return { pathData, fillColor, fillAlpha: elementOpacity, fillType }
 }
 
-function serializeAndroidXml(result: SvgParseResult, filename: string, absX: number = 0, absY: number = 0): string {
+function serializeAndroidXml(result: SvgParseResult, filename: string): string {
   const lines: string[] = []
   lines.push(`<?xml version="1.0" encoding="utf-8"?>`)
   lines.push(`<!-- ${filename} -->`)
@@ -222,22 +222,9 @@ function serializeAndroidXml(result: SvgParseResult, filename: string, absX: num
   lines.push(`    android:viewportHeight="${r6(vbH)}">`)
   lines.push(``)
 
-  // MasterGo exportAsync uses absolute canvas coordinates for path data.
-  // Use the node's absolute position on canvas to build the correction translate.
-  const tx = Math.abs(absX) > 0.001 ? -absX : 0
-  const ty = Math.abs(absY) > 0.001 ? -absY : 0
-  const needsTranslate = Math.abs(tx) > 0.001 || Math.abs(ty) > 0.001
-
-  if (needsTranslate) {
-    lines.push(`    <group`)
-    if (Math.abs(tx) > 0.001) lines.push(`        android:translateX="${r6(tx)}"`)
-    if (Math.abs(ty) > 0.001) lines.push(`        android:translateY="${r6(ty)}"`)
-    lines.push(`        >`)
-    for (const child of result.children) serializeElement(child, lines, 2)
-    lines.push(`    </group>`)
-  } else {
-    for (const child of result.children) serializeElement(child, lines, 1)
-  }
+  // MasterGo exportAsync SVG path data is already in local component coordinates.
+  // No coordinate correction needed — just serialize directly.
+  for (const child of result.children) serializeElement(child, lines, 1)
 
   lines.push(`</vector>`)
   return lines.join('\n')
@@ -436,18 +423,7 @@ async function exportNodes(ids: string[]): Promise<void> {
       parsed.viewBox[2] = Math.round(parsed.viewBox[2])
       parsed.viewBox[3] = Math.round(parsed.viewBox[3])
 
-      // Get node's absolute canvas position via absoluteTransform (most reliable)
-      // absoluteTransform = [[a,c,tx],[b,d,ty]], tx=col2row0, ty=col2row1
-      let absX = 0, absY = 0
-      const absTransform = (node as any).absoluteTransform as [[number,number,number],[number,number,number]] | undefined
-      if (absTransform) {
-        absX = absTransform[0][2]
-        absY = absTransform[1][2]
-      } else if ('absoluteX' in node) {
-        absX = (node as any).absoluteX
-        absY = (node as any).absoluteY
-      }
-      const xml = serializeAndroidXml(parsed, iconName, absX, absY)
+      const xml = serializeAndroidXml(parsed, iconName)
       results.push({ name: iconName, xml })
     } catch (err: any) {
       warnings.push(`处理失败：${iconName}（${err?.message || String(err)}）`)
